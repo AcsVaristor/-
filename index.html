@@ -1,14 +1,60 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>顔認証アプリ</title>
+  <meta charset="UTF-8">
+  <title>顔認証デモ</title>
+  <script defer src="https://cdn.jsdelivr.net/npm/face-api.js"></script>
+  <style>
+    canvas, video { position: absolute; top: 0; left: 0; }
+    #status { position: absolute; top: 10px; left: 10px; font-size: 24px; color: white; background: rgba(0,0,0,0.5); padding: 5px; }
+  </style>
 </head>
 <body>
-  <h1>顔認証デモ</h1>
-  <video id="video" width="640" height="480" autoplay muted></video>
-  <p id="label">認証中...</p>
+  <div id="status">読み込み中...</div>
+  <video id="video" width="720" height="560" autoplay muted></video>
+  <script>
+    const video = document.getElementById('video');
 
-  <script defer src="https://cdn.jsdelivr.net/npm/face-api.js"></script>
-  <script defer src="script.js"></script>
+    Promise.all([
+      faceapi.nets.tinyFaceDetector.loadFromUri('models'),
+      faceapi.nets.faceLandmark68Net.loadFromUri('models'),
+      faceapi.nets.faceRecognitionNet.loadFromUri('models'),
+    ]).then(startVideo);
+
+    function startVideo() {
+      navigator.mediaDevices.getUserMedia({ video: {} })
+        .then(stream => {
+          video.srcObject = stream;
+          document.getElementById('status').textContent = "顔を検出中...";
+        })
+        .catch(err => console.error(err));
+    }
+
+    video.addEventListener('play', async () => {
+      const canvas = faceapi.createCanvasFromMedia(video);
+      document.body.append(canvas);
+      const displaySize = { width: video.width, height: video.height };
+      faceapi.matchDimensions(canvas, displaySize);
+
+      const labeledDescriptors = []; // ← 本人画像のデータが入る（次ステップA）
+
+      const faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.6);
+
+      setInterval(async () => {
+        const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions())
+          .withFaceLandmarks()
+          .withFaceDescriptors();
+        const resized = faceapi.resizeResults(detections, displaySize);
+        canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+        const results = resized.map(d => faceMatcher.findBestMatch(d.descriptor));
+        results.forEach((result, i) => {
+          const box = resized[i].detection.box;
+          const drawBox = new faceapi.draw.DrawBox(box, { label: result.toString() });
+          drawBox.draw(canvas);
+        });
+      }, 100);
+    });
+  </script>
 </body>
 </html>
+
